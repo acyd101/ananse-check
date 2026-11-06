@@ -175,6 +175,29 @@ def check_pairs(pairs, raw_text):
     return [by_no[n] for n in nums], problems
 
 
+def reconcile(a, b):
+    """Combine two readings of the same numbered list.
+
+    PDF table cells sometimes crop long names ("Quic" for "Quick Eazzy"),
+    so when one reading is only a cut-off start of the other, keep the
+    longer one. Returns (names, how many were cut short), or (None, 0)
+    when the readings really disagree.
+    """
+    if len(a) != len(b):
+        return None, 0
+    out, cut = [], 0
+    for x, y in zip(a, b):
+        sx, sy = squash(x).lower(), squash(y).lower()
+        if sx == sy:
+            out.append(x)
+        elif sy.startswith(sx) or sx.startswith(sy):
+            out.append(x if len(sx) > len(sy) else y)
+            cut += 1
+        else:
+            return None, 0
+    return out, cut
+
+
 def parse_notice(pdf_bytes, url):
     import pdfplumber
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
@@ -205,9 +228,13 @@ def parse_notice(pdf_bytes, url):
     t_names, t_prob = check_pairs(table_pairs, text)
     x_names, x_prob = check_pairs(pairs_from_text(text), text)
     if not t_prob and not x_prob:
-        if t_names != x_names:
+        names, cut = reconcile(t_names, x_names)
+        if names is None:
+            names = t_names
             problems.append("the two reading methods disagree: table=" + json.dumps(t_names) + " text=" + json.dumps(x_names))
-        names, method = t_names, "table and text agree"
+        method = "table and text agree"
+        if cut:
+            method += f" ({cut} name(s) were cut short by one reader; the full name was kept)"
     elif not t_prob:
         names, method = t_names, "table"
     elif not x_prob:
