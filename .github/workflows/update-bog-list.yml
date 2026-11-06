@@ -1,0 +1,107 @@
+# Checks the Bank of Ghana website every morning for new notices on unlicensed
+# loan apps, and adds the new names to the Ananse Check list.
+#
+#  - auto mode (default): new names go straight onto the website, after strict checks.
+#  - review mode: you get a pull request to approve first.
+#    Set it with Settings > Secrets and variables > Actions > Variables:
+#    UPDATE_MODE = review.
+#  - If anything looks wrong, nothing is added and an issue opens for you to look at.
+name: Update Bank of Ghana list
+
+on:
+  schedule:
+    - cron: "23 6 * * *"   # every day at 06:23 Ghana time (UTC)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "auto = add new names straight away; review = open a pull request for me to approve"
+        type: choice
+        default: auto
+        options: [auto, review]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  pages: write
+
+concurrency:
+  group: bog-update
+  cancel-in-progress: false
+
+env:
+  MODE: ${{ github.event.inputs.mode || vars.UPDATE_MODE || 'auto' }}
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the PDF reader
+        run: pip install -r tools/requirements.txt
+
+      - name: Check the Bank of Ghana website
+        run: python3 tools/update_from_bog.py
+
+      - name: Read the result
+        id: result
+        run: |
+          echo "status=$(jq -r .status .bog-update/status.json)" >> "$GITHUB_OUTPUT"
+          echo "new_apps=$(jq -r .new_apps .bog-update/status.json)" >> "$GITHUB_OUTPUT"
+          echo "problems=$(jq -r '.problems | length' .bog-update/status.json)" >> "$GITHUB_OUTPUT"
+          cat .bog-update/summary.md >> "$GITHUB_STEP_SUMMARY"
+          # Commit the "last checked" date on Mondays (keeps the site's date fresh and the schedule active)
+          if [ "$(date -u +%u)" = "1" ]; then echo "weekly=true" >> "$GITHUB_OUTPUT"; else echo "weekly=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Publish the changes (auto mode)
+        if: env.MODE == 'auto' && (steps.result.outputs.new_apps != '0' || steps.result.outputs.weekly == 'true')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/unlicensed-loan-apps.csv data/processed-notices.csv data/last-checked.json index.html
+          if git diff --cached --quiet; then echo "Nothing to commit."; exit 0; fi
+          if [ "${{ steps.result.outputs.new_apps }}" != "0" ]; then
+            msg="Add ${{ steps.result.outputs.new_apps }} apps from new Bank of Ghana notices"
+          else
+            msg="Checked the Bank of Ghana website: no new notices"
+          fi
+          git commit -m "$msg"
+          git push
+          # Ask GitHub Pages to rebuild the site straight away
+          gh api -X POST "repos/${{ github.repository }}/pages/builds" >/dev/null 2>&1 || echo "Pages will rebuild on its own."
+
+      - name: Open a pull request (review mode)
+        if: env.MODE == 'review' && steps.result.outputs.new_apps != '0'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: bog-update
+          delete-branch: true
+          title: "New Bank of Ghana notice: ${{ steps.result.outputs.new_apps }} apps to add"
+          body-path: .bog-update/summary.md
+          commit-message: "Add apps from new Bank of Ghana notices"
+          add-paths: |
+            data/unlicensed-loan-apps.csv
+            data/processed-notices.csv
+            data/last-checked.json
+            index.html
+
+      - name: Report a problem
+        if: steps.result.outputs.problems != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Ananse Check updater needs a look"
+          open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            echo "Issue #$open is already open."
+          else
+            gh issue create --title "$title" --body-file .bog-update/summary.md
+          fi
