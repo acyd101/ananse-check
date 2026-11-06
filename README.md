@@ -35,17 +35,19 @@ Only add apps that a regulator has named in writing. Never add an app because so
 
 ### Automatic updates
 
-`.github/workflows/update-bog-list.yml` runs `tools/update_from_bog.py` every morning at 06:23 Ghana time. It:
+`.github/workflows/update-bog-list.yml` runs `tools/update_from_bog.py` once a year, on 1 January at 06:23 Ghana time. To check sooner, open the Actions tab, click "Update Bank of Ghana list", then "Run workflow". It:
 
 1. reads the Bank of Ghana search results for "unlicensed digital credit" and opens each notice PDF;
 2. **self-checks** by re-reading the newest notice already in the list. If it doesn't get exactly the same names, it adds nothing and opens an issue, because the Bank may have changed its format;
-3. reads any new notice: its number, its date and the numbered table of app names. A list is only added if the numbers run 1 to N with no gaps, every name is found in the PDF text, and two separate reading methods agree;
+3. reads any new notice: its number, its date and the numbered table of app names. A list is only added if the numbers run 1 to N with no gaps, every name is found in the PDF text, and two separate reading methods agree (if one cuts a name short, the full name is kept);
 4. adds the new rows, logs every PDF in `data/processed-notices.csv`, refreshes the built-in copy, and updates `data/last-checked.json` (shown on the website).
 
 | Mode | What happens with new names |
 | --- | --- |
 | `auto` (default) | Added straight to the website |
 | `review` | A pull request for you to approve (set the repository variable `UPDATE_MODE` to `review`) |
+
+GitHub switches off scheduled workflows in a public repository after 60 days with no activity. If the yearly check stops, open the Actions tab, click "Update Bank of Ghana list" and click "Enable workflow".
 
 If a check fails, nothing is added and an issue called "Ananse Check updater needs a look" opens. It only ever adds names the Bank published; it never removes any.
 

@@ -1,5 +1,6 @@
-# Checks the Bank of Ghana website every morning for new notices on unlicensed
-# loan apps, and adds the new names to the Ananse Check list.
+# Checks the Bank of Ghana website once a year (1 January) for new notices on
+# unlicensed loan apps, and adds the new names to the Ananse Check list.
+# To check sooner, open the Actions tab and click "Run workflow".
 #
 #  - auto mode (default): new names go straight onto the website, after strict checks.
 #  - review mode: you get a pull request to approve first.
@@ -10,7 +11,7 @@ name: Update Bank of Ghana list
 
 on:
   schedule:
-    - cron: "23 6 * * *"   # every day at 06:23 Ghana time (UTC)
+    - cron: "23 6 1 1 *"   # once a year: 1 January at 06:23 Ghana time (UTC)
   workflow_dispatch:
     inputs:
       mode:
@@ -56,11 +57,10 @@ jobs:
           echo "new_apps=$(jq -r .new_apps .bog-update/status.json)" >> "$GITHUB_OUTPUT"
           echo "problems=$(jq -r '.problems | length' .bog-update/status.json)" >> "$GITHUB_OUTPUT"
           cat .bog-update/summary.md >> "$GITHUB_STEP_SUMMARY"
-          # Commit the "last checked" date on Mondays (keeps the site's date fresh and the schedule active)
-          if [ "$(date -u +%u)" = "1" ]; then echo "weekly=true" >> "$GITHUB_OUTPUT"; else echo "weekly=false" >> "$GITHUB_OUTPUT"; fi
 
       - name: Publish the changes (auto mode)
-        if: env.MODE == 'auto' && (steps.result.outputs.new_apps != '0' || steps.result.outputs.weekly == 'true')
+        # Runs on every check, so the website's "last checked" date stays accurate
+        if: env.MODE == 'auto'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
