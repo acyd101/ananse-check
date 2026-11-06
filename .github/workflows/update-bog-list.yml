@@ -1,4 +1,4 @@
-# Checks the Bank of Ghana website once a year (1 January) for new notices on
+# Checks the Bank of Ghana website once a month (on the 10th) for new notices on
 # unlicensed loan apps, and adds the new names to the Ananse Check list.
 # To check sooner, open the Actions tab and click "Run workflow".
 #
@@ -11,7 +11,7 @@ name: Update Bank of Ghana list
 
 on:
   schedule:
-    - cron: "23 6 1 1 *"   # once a year: 1 January at 06:23 Ghana time (UTC)
+    - cron: "23 6 10 * *"   # once a month: the 10th at 06:23 Ghana time (UTC)
   workflow_dispatch:
     inputs:
       mode:
